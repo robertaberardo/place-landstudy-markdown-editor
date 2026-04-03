@@ -10,15 +10,164 @@
   <link rel="stylesheet" href="style.css">
   <style>
     body {
-      background: #EBEBEB;
+      height: auto;
       min-height: 100vh;
-      padding: 24px 16px 48px;
       overflow-y: auto;
+      background: #EBEBEB;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .notion-toolbar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 8px 16px;
+      gap: 8px;
+      flex-shrink: 0;
+      align-self: stretch;
+    }
+    .notion-warning {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      font-family: 'Manrope', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: #92400E;
+      background: #FEF3C7;
+      border: 1px solid #FCD34D;
+      border-radius: 6px;
+      padding: 4px 10px;
+      margin-right: auto;
+    }
+    .notion-warning.visible { display: flex; }
+    .notion-body {
+      width: 100%;
+      max-width: 422px;
+      padding: 20px 16px 48px;
+    }
+    /* help panel overlays from the right */
+    .help-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      height: 100vh;
+      z-index: 100;
     }
   </style>
 </head>
 <body>
-  <div class="preview-card" id="preview"></div>
+  <div class="notion-toolbar">
+    <span class="notion-warning" id="notion-warning">
+      ⚠ block_id não informado
+    </span>
+    <button class="btn btn--icon" id="btn-help" title="Sintaxe">
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M6.5 6C6.5 5.17 7.17 4.5 8 4.5C8.83 4.5 9.5 5.17 9.5 6C9.5 6.83 8 7.5 8 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="8" cy="10.5" r="0.7" fill="currentColor"/>
+      </svg>
+      Sintaxe
+    </button>
+    <button class="btn btn--icon" id="btn-copy-image" title="Copiar preview como imagem">
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="4" width="9" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+        <path d="M5 4V3C5 2.45 5.45 2 6 2H13C13.55 2 14 2.45 14 3V11C14 11.55 13.55 12 13 12H12" stroke="currentColor" stroke-width="1.3"/>
+      </svg>
+      Copiar imagem
+    </button>
+  </div>
+
+  <div class="notion-body">
+    <div class="preview-wrapper">
+      <div class="preview-card" id="preview"></div>
+      <!-- ANNOTATION <div class="annotation-col" id="annotation-col"></div> -->
+    </div>
+  </div>
+
+  <div class="help-panel" id="help-panel">
+    <div class="help-header">
+      <span class="help-title">Sintaxe</span>
+      <div style="display:flex;gap:4px;align-items:center">
+        <button class="help-action" id="btn-copy-syntax" title="Copiar sintaxe">
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="4" width="9" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M5 4V3C5 2.45 5.45 2 6 2H13C13.55 2 14 2.45 14 3V11C14 11.55 13.55 12 13 12H12" stroke="currentColor" stroke-width="1.3"/>
+          </svg>
+        </button>
+        <button class="help-close" id="btn-help-close" title="Fechar">
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="help-body">
+
+      <div class="help-section">
+        <div class="help-section-title">Comentários</div>
+        <div class="help-row">
+          <code>&lt;!-- texto --&gt;</code>
+          <span>nunca aparece no preview</span>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <div class="help-section-title">Títulos</div>
+        <div class="help-row"><code># Título</code><span>título principal</span></div>
+        <div class="help-row"><code>## Seção</code><span>cabeçalho de seção</span></div>
+        <div class="help-row"><code>### Subseção</code><span>cabeçalho de subseção</span></div>
+      </div>
+
+      <div class="help-section">
+        <div class="help-section-title">Campos</div>
+        <div class="help-row"><code>Label: Valor</code><span>campo simples</span></div>
+        <div class="help-row"><code>Label: =Valor</code><span>valor editável (azul)</span></div>
+        <div class="help-row"><code>Label: &gt;Valor</code><span>pill escuro com chevron</span></div>
+        <div class="help-row"><code>Label: Valor [?dica]</code><span>tooltip no label</span></div>
+        <div class="help-row help-row--block">
+          <code>Label:<br>&nbsp;&nbsp;Sub: Valor<br>&nbsp;&nbsp;Valor</code>
+          <span>sub-itens com ou sem label</span>
+        </div>
+        <div class="help-row help-row--block">
+          <code>Label::<br>&nbsp;&nbsp;| Faixa | Valor |<br>&nbsp;&nbsp;| Faixa | Min | Max |</code>
+          <span>tabela progressiva (2 ou 3 colunas)</span>
+        </div>
+      </div>
+
+      <!-- ANNOTATION
+      <div class="help-section">
+        <div class="help-section-title">Anotação</div>
+        <div class="help-row"><code>Label: Valor [!texto]</code><span>coluna lateral com texto</span></div>
+        <div class="help-row"><code>Label: Valor</code><span>coluna lateral transparente</span></div>
+        <div class="help-row"><code>Label: Valor</code><span>coluna lateral cinza sem texto</span></div>
+        <div class="help-row"><span style="padding-left:0">(sem [!...])</span><span>coluna lateral vermelho — ausente</span></div>
+      </div>
+      -->
+
+      <div class="help-section">
+        <div class="help-section-title">Blocos especiais</div>
+        <div class="help-row help-row--block">
+          <code>@desc:<br>&nbsp;&nbsp;Texto...</code>
+          <span>descrição fixa abaixo de um cabeçalho</span>
+        </div>
+        <div class="help-row help-row--block">
+          <code>@note:<br>&nbsp;&nbsp;Texto...</code>
+          <span>bloco de observação</span>
+        </div>
+        <div class="help-row"><code>@button: Texto</code><span>botão de ação</span></div>
+      </div>
+
+      <div class="help-section">
+        <div class="help-section-title">Separador</div>
+        <div class="help-row"><code>---</code><span>linha divisória</span></div>
+      </div>
+
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="app.js"></script>
 </body>

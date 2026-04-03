@@ -20,11 +20,13 @@ function esc(s) {
 function tokenizeValue(str) {
   const tokens = [];
   const tooltips = [];
+  /* ANNOTATION — let hint = null; */
   let buf = '';
   let i = 0;
 
   const highlight = str.startsWith('=');
-  const src = highlight ? str.slice(1) : str;
+  const dropdown = !highlight && str.startsWith('>');
+  const src = (highlight || dropdown) ? str.slice(1) : str;
 
   while (i < src.length) {
     if (src[i] === '[') {
@@ -36,13 +38,23 @@ function tokenizeValue(str) {
         if (src[i] === ' ') i++;
         continue;
       }
+      /* ANNOTATION —
+      const hintMatch = src.slice(i).match(/^\[!([^\]]+)\]/);
+      if (hintMatch) {
+        if (buf) { tokens.push({ type: 'text', text: buf }); buf = ''; }
+        hint = hintMatch[1].trim();
+        i += hintMatch[0].length;
+        if (src[i] === ' ') i++;
+        continue;
+      }
+      */
     }
     buf += src[i];
     i++;
   }
 
   if (buf) tokens.push({ type: 'text', text: buf.trimEnd() });
-  return { highlight, tokens, tooltips };
+  return { highlight, dropdown, tokens, tooltips /*, hint — ANNOTATION */ };
 }
 
 function renderTokens(parsed) {
@@ -51,9 +63,9 @@ function renderTokens(parsed) {
     return '';
   }).join('');
 
-  return parsed.highlight
-    ? `<span class="value-highlight">${inner}</span>`
-    : inner;
+  if (parsed.highlight) return `<span class="value-highlight">${inner}</span>`;
+  if (parsed.dropdown)  return `<span class="value-dropdown">${inner}<i class="value-dropdown-chevron">^</i></span>`;
+  return inner;
 }
 
 function renderLabel(text, tooltips) {
@@ -185,10 +197,11 @@ function parseMarkdown(md) {
       i++; continue;
     }
 
-    // Table field: "Label::" (double colon, no value)
-    const tblM = line.match(/^([^:]+)::\s*$/);
-    if (tblM) {
+    // Table field: "Label::" (double colon, optional hint)
+    const tblM = line.match(/^([^:]+)::\s*(.*)?$/);
+    if (tblM && !tblM[1].includes(':')) {
       const label = tblM[1].trim();
+      /* ANNOTATION — const tblHint = tblM[2] ? tokenizeValue(tblM[2].trim()).hint : null; */
       i++;
       const indented = collectIndented();
       const rows = indented
@@ -197,7 +210,7 @@ function parseMarkdown(md) {
           const cells = l.trim().split('|').map(c => c.trim()).filter(Boolean);
           return { cells };
         });
-      nodes.push({ type: 'field-table', label, rows });
+      nodes.push({ type: 'field-table', label /*, hint: tblHint — ANNOTATION */, rows });
       continue;
     }
 
@@ -207,11 +220,11 @@ function parseMarkdown(md) {
       const label = fieldM[1].trim();
       const rawVal = fieldM[2].trim();
 
-      // Strip tooltips from rawVal to check if a "real" value exists
       const parsedRaw = tokenizeValue(rawVal);
-      const realVal = rawVal.replace(/\[\?[^\]]+\]/g, '').trim();
+      // ANNOTATION — also strip [!...]: .replace(/\[![^\]]+\]/g, '')
+      const realVal = rawVal.replace(/\[\?[^\]]+\]/g, '').replace(/\[![^\]]+\]/g, '').trim();
 
-      // No real value → check for indented sub-fields (tooltips go on the parent label)
+      // No real value → check for indented sub-fields
       if (!realVal && i + 1 < lines.length &&
           (lines[i + 1].startsWith('  ') || lines[i + 1].startsWith('\t'))) {
         i++;
@@ -224,21 +237,22 @@ function parseMarkdown(md) {
               const cells = l.trim().split('|').map(c => c.trim()).filter(Boolean);
               return { cells };
             });
-          nodes.push({ type: 'field-table', label, tooltips: parsedRaw.tooltips, rows });
+          nodes.push({ type: 'field-table', label, tooltips: parsedRaw.tooltips /*, hint: parsedRaw.hint — ANNOTATION */, rows });
         } else {
           const subFields = indented
             .filter(l => l.trim())
             .map(l => {
               const sm = l.match(/^([^:]+):\s*(.*)$/);
-              return sm ? { label: sm[1].trim(), value: tokenizeValue(sm[2].trim()) } : null;
-            })
-            .filter(Boolean);
-          nodes.push({ type: 'field-multi', label, tooltips: parsedRaw.tooltips, subFields });
+              return sm
+                ? { label: sm[1].trim(), value: tokenizeValue(sm[2].trim()) }
+                : { label: null, value: tokenizeValue(l.trim()) };
+            });
+          nodes.push({ type: 'field-multi', label, tooltips: parsedRaw.tooltips /*, hint: parsedRaw.hint — ANNOTATION */, subFields });
         }
         continue;
       }
 
-      nodes.push({ type: 'field', label, value: parsedRaw });
+      nodes.push({ type: 'field', label /*, hint: parsedRaw.hint — ANNOTATION */, value: parsedRaw });
       i++; continue;
     }
 
@@ -269,25 +283,33 @@ function renderNodes(nodes) {
       case 'divider':
         return `<hr class="divider">`;
 
-      case 'field':
+      case 'field': {
+        /* ANNOTATION — const hintAttr = node.hint ? ` data-hint="${esc(node.hint)}"` : ''; */
         return `<div class="field-row">
           <span class="field-label">${renderLabel(node.label, node.value.tooltips)}</span>
           <span class="field-value">${renderTokens(node.value)}</span>
         </div>`;
+      }
 
-      case 'field-multi':
+      case 'field-multi': {
+        /* ANNOTATION — const hintAttr = node.hint ? ` data-hint="${esc(node.hint)}"` : ''; */
         return `<div class="field-row field-row--multi">
           <span class="field-label">${renderLabel(node.label, node.tooltips || [])}</span>
           <span class="field-value">
-            ${node.subFields.map(sf => `
+            ${node.subFields.map(sf => sf.label === null ? `
+              <span class="sub-field sub-field--value-only">
+                <span class="sub-value">${renderTokens(sf.value)}</span>
+              </span>` : `
               <span class="sub-field">
                 <span class="sub-label">${renderLabel(sf.label, sf.value.tooltips)}</span>
                 <span class="sub-value">${renderTokens(sf.value)}</span>
               </span>`).join('')}
           </span>
         </div>`;
+      }
 
-      case 'field-table':
+      case 'field-table': {
+        /* ANNOTATION — const hintAttr = node.hint ? ` data-hint="${esc(node.hint)}"` : ''; */
         return `<div class="field-row field-row--table">
           <span class="field-label">${renderLabel(node.label, node.tooltips || [])}</span>
           <span class="field-value">
@@ -300,6 +322,7 @@ function renderNodes(nodes) {
             </table>
           </span>
         </div>`;
+      }
 
       case 'note':
         return `<div class="note-block">${node.content.split('\n').map(esc).join('<br>')}</div>`;
@@ -325,20 +348,21 @@ function renderNodes(nodes) {
    ============================================================ */
 const TEMPLATE = `<!-- Consulta do Lote — use o botão Sintaxe na barra superior para ver a referência de sintaxe -->
 
-# Consulta do lote 2
 
-## Legislação
+# Legislação
 
 Numeração predial:
   | 12 | Área | 0 m |
   | 12 | Área | 10 m |
 
 
-Inscrição Imobiliária do lote: XXXX
+Inscrição Imobiliária do lote:
+  XXXX
+  XXXX
 Código do lote: XXX-XXX-XXXX
 Área do lote: XXX,XX m² [?Área total do terreno conforme matrícula no cartório de registro de imóveis]
-Zona de construção: ZEU [?Zona de Estruturação Urbana — permite maior adensamento e usos mistos]
-Subzona: 321
+Zona de construção: >ZEU [?Zona de Estruturação Urbana — permite maior adensamento e usos mistos]
+Subzona: >321
 
 Coeficiente de aproveitamento: [?Multiplica a área do lote para definir a área máxima construível]
   Básico: 1,00
@@ -382,7 +406,7 @@ Lote mínimo:
   Dimensões mínima da testada: XXX m [?Largura mínima da frente do lote voltada para a via pública]
   Profundidade mínima: XX m
 
-## Observações
+# Observações
 
 @note:
   O lote está localizado em área de restrição ambiental, portanto é necessário considerar
@@ -398,7 +422,7 @@ Lote mínimo:
   O lote está situado em área com avaliação especial pelo órgão de patrimônio histórico.
   Recomenda-se consulta prévia antes de protocolar pedido de aprovação de projeto.
 
-## Simulação de áreas
+# Simulação de áreas
 
 Coeficiente de aproveitamento utilizado: =4,00
 Área computável: XXX m² [?Área que conta para o cálculo do coeficiente de aproveitamento]
@@ -411,7 +435,7 @@ Coeficiente de aproveitamento utilizado: =4,00
 Eficiência: 0,85 [?Relação entre área privativa e área construída total]
 Área total construída: XXXX m²
 
-## Viabilidade financeiras
+# Viabilidade financeiras
 
 @desc:
   Nessa seção é possível simular uma viabilidade financeira prévia para o empreendimento.
@@ -420,12 +444,12 @@ Eficiência: 0,85 [?Relação entre área privativa e área construída total]
   responsabiliza ou compromete com nenhum valor. A ferramenta de viabilidade financeira
   é auxiliar para o empreendedor.
 
-### Custos do terreno
+## Custos do terreno
 
 Pagamento em parcelas financeiras: 0,00% VGV
 Pagamento em dinheiro: R$ XXX
 
-### Contrapartidas Outorgas
+## Contrapartidas Outorgas
 
 Contrapartidas Financeiras (CF): R$ XXX [?Valor total a pagar à Prefeitura pelo uso do potencial construtivo adicional]
 Fator de Contribuição (FC): XXX %
@@ -436,7 +460,7 @@ Número de unidades habitacionais: R$ XXX XXX
 CUB: R$ XXX [?Custo Unitário Básico da construção civil — referência para cálculo de obra]
 FT: 0,85
 
-### Receitas
+## Receitas
 
 Valor das unidades privadas: R$ XXX
 com um valor de m² privativo: R$ XXX
@@ -444,7 +468,7 @@ Receita bruta: R$ XXXXX
 Permuta do terreno: XXX % VGV [?Percentual do VGV entregue ao proprietário do terreno como pagamento]
 Imposto: XXX % VGV
 
-### Despesas
+## Despesas
 
 Compra do terreno: R$ XXX
 Custo da Obra (R$ por m² construído): R$ XXX
@@ -454,7 +478,7 @@ Marketing: XXX
 Custos extras: XXX %
 Total custos: R$ XXX.XXX.XXX,XX
 
-### Indicadores de viabilidade
+## Indicadores de viabilidade
 
 ROI: 37%
 VGV: R$ XXX.XXX.XXX,XX
@@ -498,6 +522,135 @@ function extractNotionId(input) {
   const clean = input.replace(/-/g, '');
   if (/^[0-9a-f]{32}$/i.test(clean)) return formatNotionUUID(clean);
   return input;
+}
+
+/* ============================================================
+   Syntax reference (plain text for clipboard copy)
+   ============================================================ */
+const SYNTAX_TEXT = `SINTAXE — Lote Editor
+
+COMENTÁRIOS
+  <!-- qualquer texto -->       nunca aparece no preview
+
+TÍTULOS
+  # Título                      título principal da página
+  ## Seção                      cabeçalho de seção
+  ### Subseção                  cabeçalho de subseção
+
+CAMPOS
+  Label: Valor                  campo simples
+  Label: =Valor                 valor editável (fundo azul)
+  Label: >Valor                 valor em destaque — pill escuro com chevron
+  Label: Valor [?dica]          tooltip aparece no label ao passar o mouse
+  Label:                        campo com múltiplos sub-itens (indentados 2 espaços)
+    Sub-label: Valor
+    Sub-label: Valor [?dica]
+    Valor                       valor sem sub-label (só o valor, alinhado à direita)
+  Label::                       campo com tabela progressiva (indentada 2 espaços)
+    | Faixa          | Valor |           (2 colunas)
+    | Faixa          | Min  | Max |      (3 colunas)
+
+
+BLOCOS ESPECIAIS
+  @desc:                        descrição fixa abaixo de um cabeçalho de seção
+    Texto do bloco...
+  @note:                        bloco de observação (borda lateral cinza)
+    Texto da nota...
+  @button: Texto                botão de ação
+
+SEPARADOR
+  ---                           linha divisória
+`;
+
+/* ============================================================
+   ANNOTATION — Status Column (commented out)
+   Aligns hint labels to their field rows via [!text] syntax.
+   Re-enable by uncommenting this block and all ANNOTATION markers.
+   ============================================================
+function updateAnnotationCol() {
+  const col = document.getElementById('annotation-col');
+  const card = document.getElementById('preview');
+  if (!col || !card) return;
+  col.innerHTML = '';
+  card.querySelectorAll('.field-row').forEach(row => {
+    const item = document.createElement('div');
+    item.className = 'annotation-item';
+    item.style.top    = row.offsetTop + 'px';
+    item.style.height = row.offsetHeight + 'px';
+    const hint = row.dataset.hint;
+    if (hint === '!') {
+      item.classList.add('annotation-item--transparent');
+    } else if (hint === 'hide') {
+      // default gray — acknowledged, no text needed
+    } else if (hint) {
+      item.textContent = hint;
+    } else {
+      item.classList.add('annotation-item--missing');
+    }
+    col.appendChild(item);
+  });
+}
+============================================================ */
+
+/* ============================================================
+   Shared Toolbar Setup (help panel + copy syntax + copy image)
+   Works for both index.html and notion.html
+   ============================================================ */
+function setupToolbar(preview) {
+  const helpPanel     = document.getElementById('help-panel');
+  const btnHelp       = document.getElementById('btn-help');
+  const btnHelpClose  = document.getElementById('btn-help-close');
+  const btnCopySyntax = document.getElementById('btn-copy-syntax');
+  const btnCopyImage  = document.getElementById('btn-copy-image');
+
+  if (btnHelp && helpPanel) {
+    btnHelp.addEventListener('click', () => {
+      const open = helpPanel.classList.toggle('open');
+      btnHelp.classList.toggle('active', open);
+    });
+  }
+  if (btnHelpClose && helpPanel) {
+    btnHelpClose.addEventListener('click', () => {
+      helpPanel.classList.remove('open');
+      if (btnHelp) btnHelp.classList.remove('active');
+    });
+  }
+  if (btnCopySyntax) {
+    btnCopySyntax.addEventListener('click', () => {
+      navigator.clipboard.writeText(SYNTAX_TEXT).then(() => {
+        btnCopySyntax.classList.add('copied');
+        setTimeout(() => btnCopySyntax.classList.remove('copied'), 1800);
+      });
+    });
+  }
+  if (btnCopyImage) {
+    btnCopyImage.addEventListener('click', async () => {
+      btnCopyImage.disabled = true;
+      try {
+        const canvas = await html2canvas(preview, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          logging: false
+        });
+        canvas.toBlob(async blob => {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            btnCopyImage.classList.add('copied');
+            setTimeout(() => btnCopyImage.classList.remove('copied'), 1800);
+          } catch {
+            const url = URL.createObjectURL(blob);
+            const a = Object.assign(document.createElement('a'), { href: url, download: 'preview.png' });
+            a.click();
+            URL.revokeObjectURL(url);
+          }
+          btnCopyImage.disabled = false;
+        }, 'image/png');
+      } catch {
+        btnCopyImage.disabled = false;
+      }
+    });
+  }
 }
 
 /* ============================================================
@@ -562,7 +715,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const content = data[data.type];
             const richText = content && content.rich_text ? content.rich_text : [];
             const markdown = richText.map(rt => rt.plain_text).join('');
-            if (preview && markdown) preview.innerHTML = renderNodes(parseMarkdown(markdown));
+            if (preview && markdown) {
+            preview.innerHTML = renderNodes(parseMarkdown(markdown));
+            /* ANNOTATION — requestAnimationFrame(updateAnnotationCol); */
+          }
           })
           .catch(err => console.error('notion fetch error:', err));
       }
@@ -570,109 +726,31 @@ document.addEventListener('DOMContentLoaded', () => {
       setupTooltip(preview);
       syncFromNotion();
       setInterval(syncFromNotion, 2000);
-      return;
     } else {
       console.warn('notion: missing block_id in URL params');
+      const warningEl = document.getElementById('notion-warning');
+      if (warningEl) warningEl.classList.add('visible');
+      if (preview) {
+        preview.innerHTML = renderNodes(parseMarkdown(TEMPLATE));
+        /* ANNOTATION — requestAnimationFrame(updateAnnotationCol); */
+      }
+      setupTooltip(preview);
     }
 
-    if (preview) {
-      preview.innerHTML = renderNodes(parseMarkdown(TEMPLATE));
-    }
+    setupToolbar(preview);
     return;
   }
 
   const editor   = document.getElementById('editor');
   const preview  = document.getElementById('preview');
   const fileInput = document.getElementById('file-input');
-  const btnLoad       = document.getElementById('btn-load');
-  const btnSave       = document.getElementById('btn-save');
-  const btnHelp       = document.getElementById('btn-help');
-  const btnHelpClose  = document.getElementById('btn-help-close');
-  const btnCopySyntax = document.getElementById('btn-copy-syntax');
-  const btnCopyImage  = document.getElementById('btn-copy-image');
-  const helpPanel     = document.getElementById('help-panel');
+  const btnLoad  = document.getElementById('btn-load');
+  const btnSave  = document.getElementById('btn-save');
   const resizer  = document.getElementById('resizer');
   const panels   = document.querySelector('.panels');
 
-  // ── Help panel toggle ──────────────────────────────────────
-  btnHelp.addEventListener('click', () => {
-    const open = helpPanel.classList.toggle('open');
-    btnHelp.classList.toggle('active', open);
-  });
-  btnHelpClose.addEventListener('click', () => {
-    helpPanel.classList.remove('open');
-    btnHelp.classList.remove('active');
-  });
-
-  // ── Copy syntax as plain text ──────────────────────────────
-  const SYNTAX_TEXT = `SINTAXE — Lote Editor
-
-COMENTÁRIOS
-  <!-- qualquer texto -->       nunca aparece no preview
-
-TÍTULOS
-  # Título                      título principal da página
-  ## Seção                      cabeçalho de seção
-  ### Subseção                  cabeçalho de subseção
-
-CAMPOS
-  Label: Valor                  campo simples
-  Label: =Valor                 valor editável (fundo azul)
-  Label: Valor [?dica]          tooltip aparece no label ao passar o mouse
-  Label:                        campo com múltiplos sub-itens (indentados 2 espaços)
-    Sub-label: Valor
-    Sub-label: Valor [?dica]
-  Label::                       campo com tabela progressiva (indentada 2 espaços)
-    | Faixa          | Valor |           (2 colunas)
-    | Faixa          | Min  | Max |      (3 colunas)
-
-BLOCOS ESPECIAIS
-  @desc:                        descrição fixa abaixo de um cabeçalho de seção
-    Texto do bloco...
-  @note:                        bloco de observação (borda lateral cinza)
-    Texto da nota...
-  @button: Texto                botão de ação
-
-SEPARADOR
-  ---                           linha divisória
-`;
-
-  btnCopySyntax.addEventListener('click', () => {
-    navigator.clipboard.writeText(SYNTAX_TEXT).then(() => {
-      btnCopySyntax.classList.add('copied');
-      setTimeout(() => btnCopySyntax.classList.remove('copied'), 1800);
-    });
-  });
-
-  // ── Copy preview as image ──────────────────────────────────
-  btnCopyImage.addEventListener('click', async () => {
-    const card = document.getElementById('preview');
-    btnCopyImage.disabled = true;
-    try {
-      const canvas = await html2canvas(card, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true,
-        logging: false
-      });
-      canvas.toBlob(async blob => {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          btnCopyImage.classList.add('copied');
-          setTimeout(() => btnCopyImage.classList.remove('copied'), 1800);
-        } catch {
-          // Clipboard API blocked (file://) — download instead
-          const url = URL.createObjectURL(blob);
-          const a = Object.assign(document.createElement('a'), { href: url, download: 'preview.png' });
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-        btnCopyImage.disabled = false;
-      }, 'image/png');
-    } catch (err) {
-      btnCopyImage.disabled = false;
-    }
-  });
+  // ── Toolbar (help panel + copy syntax + copy image) ───────
+  setupToolbar(preview);
 
   // ── Load template ──────────────────────────────────────────
   editor.value = TEMPLATE;
@@ -754,5 +832,6 @@ SEPARADOR
     } catch (err) {
       preview.innerHTML = `<div class="parse-error">Erro: ${esc(err.message)}</div>`;
     }
+    /* ANNOTATION — requestAnimationFrame(updateAnnotationCol); */
   }
 });

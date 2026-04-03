@@ -46,7 +46,10 @@
           </button>
         </div>
         <div class="preview-scroll">
-          <div class="preview-card" id="preview"></div>
+          <div class="preview-wrapper">
+            <div class="preview-card" id="preview"></div>
+            <!-- ANNOTATION <div class="annotation-col" id="annotation-col"></div> -->
+          </div>
         </div>
       </div>
       <div class="help-panel" id="help-panel">
@@ -87,16 +90,27 @@
             <div class="help-section-title">Campos</div>
             <div class="help-row"><code>Label: Valor</code><span>campo simples</span></div>
             <div class="help-row"><code>Label: =Valor</code><span>valor editável (azul)</span></div>
+            <div class="help-row"><code>Label: &gt;Valor</code><span>pill escuro com chevron</span></div>
             <div class="help-row"><code>Label: Valor [?dica]</code><span>tooltip no label</span></div>
             <div class="help-row help-row--block">
-              <code>Label:<br>&nbsp;&nbsp;Sub: Valor<br>&nbsp;&nbsp;Sub: Valor [?dica]</code>
-              <span>campo com sub-itens</span>
+              <code>Label:<br>&nbsp;&nbsp;Sub: Valor<br>&nbsp;&nbsp;Valor</code>
+              <span>sub-itens com ou sem label</span>
             </div>
             <div class="help-row help-row--block">
               <code>Label::<br>&nbsp;&nbsp;| Faixa | Valor |<br>&nbsp;&nbsp;| Faixa | Min | Max |</code>
               <span>tabela progressiva (2 ou 3 colunas)</span>
             </div>
           </div>
+
+          <!-- ANNOTATION
+          <div class="help-section">
+            <div class="help-section-title">Anotação</div>
+            <div class="help-row"><code>Label: Valor [!texto]</code><span>coluna lateral com texto</span></div>
+            <div class="help-row"><code>Label: Valor</code><span>coluna lateral transparente</span></div>
+            <div class="help-row"><code>Label: Valor</code><span>coluna lateral cinza sem texto</span></div>
+            <div class="help-row"><span style="padding-left:0">(sem [!...])</span><span>coluna lateral vermelho — ausente</span></div>
+          </div>
+          -->
 
           <div class="help-section">
             <div class="help-section-title">Blocos especiais</div>
